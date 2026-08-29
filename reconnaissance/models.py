@@ -19,11 +19,23 @@ MAX_STATUS_CODE = 599
 
 
 class HttpMethod(StrEnum):
-    """HTTP methods permitted by the non-destructive recon profile."""
+    """HTTP methods a discovered endpoint may carry.
+
+    GET/HEAD/OPTIONS are safe (non-destructive) and always probed. The
+    state-changing verbs are recorded from specs/crawls for inventory, and only
+    sent when the operator opts in via ``ScanConfig.send_destructive``.
+    """
 
     GET = "GET"
     HEAD = "HEAD"
     OPTIONS = "OPTIONS"
+    POST = "POST"
+    PUT = "PUT"
+    DELETE = "DELETE"
+    PATCH = "PATCH"
+
+
+SAFE_METHODS = frozenset({HttpMethod.GET, HttpMethod.HEAD, HttpMethod.OPTIONS})
 
 
 class EndpointSource(StrEnum):
@@ -114,7 +126,8 @@ class DiscoveredEndpoint:
 
     Attributes:
         url: Absolute URL as discovered.
-        method: HTTP method (non-destructive profile: GET/HEAD/OPTIONS).
+        method: HTTP method (safe verbs are probed; state-changing verbs are
+            recorded and only sent under ``send_destructive``).
         source: Discovery origin.
         status: HTTP status if the endpoint was probed, else None.
         content_type: Response content-type if probed, else None.
@@ -242,6 +255,7 @@ class ScanConfig:
     scope: Scope
     budget: Budget = field(default_factory=Budget)
     reveal_secrets: bool = False
+    send_destructive: bool = False
 
     def __post_init__(self) -> None:
         if not self.base_url.strip():

@@ -6,7 +6,7 @@ from pathlib import Path
 
 from reconnaissance.adapters.tools import apispec
 from reconnaissance.adapters.tools.apispec import SpecKind
-from reconnaissance.models import ParamLocation
+from reconnaissance.models import HttpMethod, ParamLocation
 
 FIXTURE = (Path(__file__).parent / "fixtures" / "openapi.json").read_text()
 
@@ -29,17 +29,18 @@ def test_walk_spec_expands_paths_with_base_url() -> None:
     assert result.operation_count == 3
 
 
-def test_walk_spec_extracts_query_path_and_body_params() -> None:
-    # Given the same document
+def test_walk_spec_preserves_method_and_attributes_params_per_operation() -> None:
+    # Given the same document (GET+POST on /users, GET on /users/{id})
     result = apispec.walk_spec(FIXTURE)
-    by_url = {se.endpoint.url: se for se in result.endpoints}
-    users = by_url["https://app.example.com/api/v1/users"]
-    user_by_id = by_url["https://app.example.com/api/v1/users/{id}"]
-    # Then query params, a path param, and requestBody props are all captured
-    users_params = {(p.name, p.location) for p in users.params}
-    assert ("page", ParamLocation.QUERY) in users_params
-    assert ("name", ParamLocation.BODY) in users_params
-    assert ("email", ParamLocation.BODY) in users_params
+    by_key = {(se.endpoint.method, se.endpoint.url): se for se in result.endpoints}
+    users_get = by_key[(HttpMethod.GET, "https://app.example.com/api/v1/users")]
+    users_post = by_key[(HttpMethod.POST, "https://app.example.com/api/v1/users")]
+    user_by_id = by_key[(HttpMethod.GET, "https://app.example.com/api/v1/users/{id}")]
+    # Then each verb keeps its own params: query on GET, requestBody props on POST
+    assert ("page", ParamLocation.QUERY) in {(p.name, p.location) for p in users_get.params}
+    post_params = {(p.name, p.location) for p in users_post.params}
+    assert ("name", ParamLocation.BODY) in post_params
+    assert ("email", ParamLocation.BODY) in post_params
     id_params = {(p.name, p.location) for p in user_by_id.params}
     assert ("id", ParamLocation.PATH) in id_params
     assert ("expand", ParamLocation.QUERY) in id_params

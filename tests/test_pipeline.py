@@ -105,6 +105,33 @@ def test_run_scan_graceful_when_all_binaries_missing(tmp_path: Path) -> None:
     assert result.endpoint_count >= 1
 
 
+@pytest.mark.integration
+def test_run_scan_sends_discovered_state_changing_requests_only_when_destructive(tmp_path: Path) -> None:
+    # Given a crawl that surfaces a DELETE endpoint
+    def crawl_delete(seeds: Sequence[str], proxy: str | None, headless: bool) -> katana.CrawlOutcome:
+        endpoint = DiscoveredEndpoint(url="https://app.example.com/items/1", method=HttpMethod.DELETE, source=EndpointSource.CRAWL)
+        return katana.CrawlOutcome(endpoints=(endpoint,), js_urls=(), missing_binary=False)
+
+    sent: list[tuple[str, str]] = []
+
+    def http_request(url: str, method: str, proxy: str | None) -> int | None:
+        sent.append((method, url))
+        return 204
+
+    base = dataclasses.replace(_fake_toolset(), probe=_empty_probe, crawl=crawl_delete, http_get=lambda url, proxy: None, http_request=http_request)
+
+    # When destructive is OFF (default), the DELETE is inventoried but never sent
+    run_scan(ScanConfig(base_url=BASE, scope=Scope(target_host=HOST)), db_path=str(tmp_path / "off.sqlite"), toolset=base)
+    assert sent == []
+
+    # When destructive is ON, the DELETE is actually sent and its status recorded
+    result = run_scan(ScanConfig(base_url=BASE, scope=Scope(target_host=HOST), send_destructive=True), db_path=str(tmp_path / "on.sqlite"), toolset=base)
+    assert ("DELETE", "https://app.example.com/items/1") in sent
+    store = ScanStore(str(tmp_path / "on.sqlite"))
+    rows = {(str(r["method"]), str(r["url"])): r["status"] for r in store.list_endpoints(result.scan_id)}
+    assert rows[("DELETE", "https://app.example.com/items/1")] == 204
+
+
 def test_harvest_query_params_extracts_named_query_keys() -> None:
     params = harvest_query_params("https://app.example.com/s?q=x&lang=en&q=dup", EndpointSource.GAU)
     names = {p.name for p in params}

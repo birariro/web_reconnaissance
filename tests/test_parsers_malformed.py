@@ -32,7 +32,7 @@ def test_katana_parse_skips_non_dict_request_and_response() -> None:
     )
     outcome = katana.parse_crawl(text)
     assert [e.url for e in outcome.endpoints] == ["https://app.example.com/x"]
-    assert outcome.endpoints[0].method.value == "GET"
+    assert outcome.endpoints[0].method.value == "POST"
 
 
 def test_ffuf_parse_skips_rows_missing_url() -> None:

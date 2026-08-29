@@ -17,7 +17,7 @@ import time
 import urllib.error
 import urllib.request
 from collections.abc import Callable, Sequence
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from urllib.parse import parse_qsl, urlsplit
 
 from reconnaissance import scope as scope_mod
@@ -26,6 +26,7 @@ from reconnaissance.adapters.execution import DockerToolEnvironment
 from reconnaissance.adapters.store import EndpointInsert, ScanStore
 from reconnaissance.adapters.tools import apispec, arjun, ffuf, gau, httpx, katana, sourcemap
 from reconnaissance.models import (
+    SAFE_METHODS,
     Classification,
     DiscoveredEndpoint,
     DiscoveredParam,
@@ -86,6 +87,25 @@ def _real_http_get(url: str, proxy: str | None) -> str | None:
     return raw.decode("utf-8", errors="replace")
 
 
+def _real_http_request(url: str, method: str, proxy: str | None) -> int | None:
+    """Issue ``method`` at ``url`` through the proxy; return the status code.
+
+    Used only for the opt-in destructive stage. A non-2xx response still yields
+    a status (via ``HTTPError``); a transport failure returns None.
+    """
+    opener = urllib.request.build_opener(urllib.request.ProxyHandler({"http": proxy, "https": proxy})) if proxy else urllib.request.build_opener()
+    request = urllib.request.Request(url, method=method)  # noqa: S310 - scheme is our normalized http(s) target
+    try:
+        with opener.open(request, timeout=_HTTP_GET_TIMEOUT) as response:
+            status: int = response.status
+            return status
+    except urllib.error.HTTPError as e:
+        return int(e.code)
+    except (urllib.error.URLError, OSError, ValueError) as e:
+        logger.warning("http %s failed: url=%s err=%s", method, _safe_url(url), type(e).__name__)
+        return None
+
+
 @dataclass(frozen=True, slots=True)
 class Toolset:
     """Injected network boundary over the recon tools (see :func:`default_toolset`)."""
@@ -96,6 +116,7 @@ class Toolset:
     find_params: Callable[[str, str | None], arjun.ParamOutcome]
     collect_historical: Callable[[str, str | None], gau.GauOutcome]
     http_get: Callable[[str, str | None], str | None]
+    http_request: Callable[[str, str, str | None], int | None] = _real_http_request
 
 
 def default_toolset(rate: int) -> Toolset:
@@ -108,6 +129,7 @@ def default_toolset(rate: int) -> Toolset:
         find_params=lambda url, proxy: arjun.find_params(url, proxy=proxy, rate=rate),
         collect_historical=lambda host, proxy: gau.collect(host, proxy=proxy),
         http_get=_real_http_get,
+        http_request=_real_http_request,
     )
 
 
@@ -186,6 +208,7 @@ class _ScanContext:
     api_surfaces: list[dict[str, object]] = field(default_factory=list)
     start_time: float = 0.0
     endpoint_count: int = 0
+    destructive_targets: dict[tuple[str, str], DiscoveredEndpoint] = field(default_factory=dict)
 
 
 def run_scan(
@@ -221,7 +244,9 @@ def run_scan(
     store = ScanStore(db_path)
     store.initialize()
     scan_id = store.create_scan(config)
-    policy = ProxyPolicy(config.scope, rate_per_second=proxy_rate, max_requests=config.budget.max_requests, max_concurrency=max_concurrency)
+    policy = ProxyPolicy(config.scope, rate_per_second=proxy_rate, max_requests=config.budget.max_requests, max_concurrency=max_concurrency, allow_destructive=config.send_destructive)
+    if config.send_destructive:
+        logger.warning("destructive mode ON: state-changing requests (POST/PUT/DELETE/PATCH) will be SENT to %s", config.scope.target_host)
 
     with contextlib.ExitStack() as stack:
         if use_real_tools:
@@ -266,20 +291,25 @@ def _run_stages(ctx: _ScanContext, *, clock: Callable[[], float]) -> Termination
     seeds |= _stage_historical(ctx)
     seeds |= _stage_api_specs(ctx, base_url)
 
+    reason = TerminationReason.BUDGET_EXHAUSTED  # fallthrough: ran out of passes while still growing
     for pass_index in range(ctx.config.budget.max_passes):
         if _killswitch_tripped(ctx):
-            return TerminationReason.KILLSWITCH
+            reason = TerminationReason.KILLSWITCH
+            break
         if _budget_exhausted(ctx, clock=clock):
-            return TerminationReason.BUDGET_EXHAUSTED
+            reason = TerminationReason.BUDGET_EXHAUSTED
+            break
         before = ctx.ledger.pattern_count
         new_seeds = _run_discovery_pass(ctx, sorted(seeds), first_pass=pass_index == 0)
         _stage_probe(ctx, sorted(new_seeds), EndpointSource.CRAWL)
         seeds = new_seeds
         logger.info("pass complete: pass=%d patterns=%d new_seeds=%d", pass_index, ctx.ledger.pattern_count, len(new_seeds))
         if ctx.ledger.pattern_count == before or not new_seeds:
-            return TerminationReason.CONVERGED
-    # Ran out of passes while still finding new patterns → coverage is partial.
-    return TerminationReason.BUDGET_EXHAUSTED
+            reason = TerminationReason.CONVERGED
+            break
+    if ctx.config.send_destructive:
+        _stage_destructive(ctx)
+    return reason
 
 
 def _stage_probe(ctx: _ScanContext, urls: Sequence[str], source: EndpointSource) -> None:
@@ -491,7 +521,21 @@ def _record_endpoint(ctx: _ScanContext, endpoint: DiscoveredEndpoint) -> str:
     endpoint_id, is_new = ctx.store.add_endpoint(ctx.scan_id, row)
     if is_new:
         ctx.endpoint_count += 1
+    if row.in_scope and endpoint.method not in SAFE_METHODS:
+        ctx.destructive_targets.setdefault((str(endpoint.method), normalized), endpoint)
     return endpoint_id
+
+
+def _stage_destructive(ctx: _ScanContext) -> None:
+    """Opt-in: replay each recorded state-changing endpoint and store its status."""
+    for endpoint in ctx.destructive_targets.values():
+        if _killswitch_tripped(ctx):
+            logger.warning("destructive stage stopped early: request kill-switch tripped")
+            return
+        status = ctx.toolset.http_request(endpoint.url, str(endpoint.method), ctx.proxy_url)
+        logger.info("destructive probe: method=%s url=%s status=%s", endpoint.method, _safe_url(endpoint.url), status)
+        if status is not None:
+            _record_endpoint(ctx, replace(endpoint, status=status))
 
 
 def _budget_exhausted(ctx: _ScanContext, *, clock: Callable[[], float]) -> bool:

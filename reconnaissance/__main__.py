@@ -40,6 +40,7 @@ def _build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--max-requests", type=int, default=None, help="Global request kill-switch.")
     parser.add_argument("--max-endpoints", type=int, default=None, help="Endpoint budget.")
     parser.add_argument("--reveal-secrets", action="store_true", help="Store discovered secrets unmasked (sensitive).")
+    parser.add_argument("--destructive", action="store_true", help="Actually SEND discovered state-changing requests (POST/PUT/DELETE/PATCH). Off by default.")
     parser.add_argument("--headless", action="store_true", help="Drive katana headless for JS-heavy targets.")
     parser.add_argument("--allow-internal", action="store_true", help="Permit loopback/private targets (e.g. a local test app).")
     parser.add_argument("--agent", action="store_true", help="Enable the optional JS-semantics agent layer (needs anthropic + API key).")
@@ -56,7 +57,7 @@ def _build_config(args: argparse.Namespace, host: str, normalized_url: str) -> S
     if args.max_endpoints is not None:
         budget_kwargs["max_endpoints"] = args.max_endpoints
     budget = Budget(**budget_kwargs)
-    return ScanConfig(base_url=normalized_url, scope=scope, budget=budget, reveal_secrets=args.reveal_secrets)
+    return ScanConfig(base_url=normalized_url, scope=scope, budget=budget, reveal_secrets=args.reveal_secrets, send_destructive=args.destructive)
 
 
 def main(argv: list[str] | None = None) -> int:

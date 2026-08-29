@@ -83,13 +83,27 @@ class RateLimiter:
 class ProxyPolicy:
     """Pure allow/deny decision: host scope + rate + global kill-switch."""
 
-    def __init__(self, scope: Scope, *, rate_per_second: float, max_requests: int, max_concurrency: int = DEFAULT_MAX_CONCURRENCY, clock: Callable[[], float] = time.monotonic) -> None:
+    def __init__(
+        self,
+        scope: Scope,
+        *,
+        rate_per_second: float,
+        max_requests: int,
+        max_concurrency: int = DEFAULT_MAX_CONCURRENCY,
+        allow_destructive: bool = False,
+        clock: Callable[[], float] = time.monotonic,
+    ) -> None:
         self._scope = scope
         self._limiter = RateLimiter(rate_per_second, clock=clock)
         self._max_requests = max_requests
+        self._allow_destructive = allow_destructive
         self._count = 0
         self._lock = threading.Lock()
         self._slots = threading.BoundedSemaphore(max_concurrency)
+
+    def method_allowed(self, method: str) -> bool:
+        """Whether ``method`` may leave the proxy (state-changing verbs need opt-in)."""
+        return method in ALLOWED_METHODS or self._allow_destructive
 
     @property
     def request_count(self) -> int:
@@ -170,14 +184,22 @@ class _Handler(BaseHTTPRequestHandler):
         if not decision.allowed:
             self._deny(decision.reason)
             return
-        if self.command not in ALLOWED_METHODS:
+        if not self._policy.method_allowed(self.command):
             self._deny(f"method not allowed: {self.command}")
             return
         port = parts.port or 80
         path = parts.path or "/"
         if parts.query:
             path = f"{path}?{parts.query}"
-        request = f"{self.command} {path} HTTP/1.0\r\nHost: {host}\r\nConnection: close\r\n\r\n"
+        length = int(self.headers.get("Content-Length", "0") or "0")
+        body = self.rfile.read(length) if length > 0 else b""
+        head = f"{self.command} {path} HTTP/1.0\r\nHost: {host}\r\nConnection: close\r\n"
+        if body:
+            head += f"Content-Length: {len(body)}\r\n"
+            content_type = self.headers.get("Content-Type")
+            if content_type:
+                head += f"Content-Type: {content_type}\r\n"
+        head += "\r\n"
         with self._policy.slot():
             try:
                 upstream = socket.create_connection((host, port), timeout=_UPSTREAM_CONNECT_TIMEOUT)
@@ -186,7 +208,7 @@ class _Handler(BaseHTTPRequestHandler):
                 self.send_error(502, "Bad Gateway")
                 return
             with upstream:
-                upstream.sendall(request.encode("latin-1"))
+                upstream.sendall(head.encode("latin-1") + body)
                 while True:
                     chunk = upstream.recv(_TUNNEL_CHUNK)
                     if not chunk:
@@ -200,6 +222,18 @@ class _Handler(BaseHTTPRequestHandler):
         self._forward_simple()
 
     def do_OPTIONS(self) -> None:  # noqa: N802 - stdlib handler name
+        self._forward_simple()
+
+    def do_POST(self) -> None:  # noqa: N802 - stdlib handler name
+        self._forward_simple()
+
+    def do_PUT(self) -> None:  # noqa: N802 - stdlib handler name
+        self._forward_simple()
+
+    def do_DELETE(self) -> None:  # noqa: N802 - stdlib handler name
+        self._forward_simple()
+
+    def do_PATCH(self) -> None:  # noqa: N802 - stdlib handler name
         self._forward_simple()
 
     def _tunnel(self, client: socket.socket, upstream: socket.socket) -> None:

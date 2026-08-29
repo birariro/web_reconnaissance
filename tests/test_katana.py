@@ -38,14 +38,14 @@ def test_parse_crawl_collects_js_urls_when_path_or_content_type_is_javascript() 
     assert "https://app.example.com/login" not in outcome.js_urls
 
 
-def test_parse_crawl_records_non_get_as_get_when_method_is_post() -> None:
-    # Given a POST request line (non-destructive: record surface, never replay)
+def test_parse_crawl_preserves_post_method() -> None:
+    # Given a POST request line (recorded for inventory; only sent under --destructive)
     line = '{"request":{"method":"POST","endpoint":"https://app.example.com/submit"},"response":{"status_code":200}}'
     # When parsed
     outcome = katana.parse_crawl(line)
-    # Then the endpoint is recorded but forced to GET
+    # Then the endpoint keeps its POST method
     assert outcome.endpoints[0].url == "https://app.example.com/submit"
-    assert outcome.endpoints[0].method is HttpMethod.GET
+    assert outcome.endpoints[0].method is HttpMethod.POST
 
 
 def test_parse_crawl_skips_invalid_lines_when_json_is_malformed() -> None:

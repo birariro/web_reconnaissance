@@ -67,6 +67,7 @@ class _Options:
     reveal_secrets: bool = False
     headless: bool = False
     agent: bool = False
+    destructive: bool = False
 
 
 def _parse_options(form: dict[str, list[str]]) -> _Options:
@@ -80,6 +81,7 @@ def _parse_options(form: dict[str, list[str]]) -> _Options:
         reveal_secrets=_flag(form, "reveal_secrets"),
         headless=_flag(form, "headless"),
         agent=_flag(form, "agent"),
+        destructive=_flag(form, "destructive"),
     )
 
 
@@ -117,7 +119,7 @@ def _run_job(job: _Job, opts: _Options) -> None:
             budget_kwargs["max_requests"] = opts.max_requests
         if opts.max_endpoints is not None:
             budget_kwargs["max_endpoints"] = opts.max_endpoints
-        config = ScanConfig(base_url=normalized, scope=scope, budget=Budget(**budget_kwargs), reveal_secrets=opts.reveal_secrets)
+        config = ScanConfig(base_url=normalized, scope=scope, budget=Budget(**budget_kwargs), reveal_secrets=opts.reveal_secrets, send_destructive=opts.destructive)
         db_path = str(_SCAN_DIR / f"{job.id}.sqlite")
         Path(db_path).parent.mkdir(parents=True, exist_ok=True)
         with _STATE.run_lock:
@@ -265,6 +267,7 @@ def _home_page() -> str:
   </div>
   <div class="row"><label><input type="checkbox" name="headless"> Headless crawl (JS-heavy SPA)</label></div>
   <div class="row"><label><input type="checkbox" name="reveal_secrets"> Reveal discovered secrets (unmasked)</label></div>
+  <div class="row"><label class="warn"><input type="checkbox" name="destructive"> Destructive: actually SEND discovered POST/PUT/DELETE/PATCH requests</label></div>
   <div class="row"><label><input type="checkbox" name="agent"> JS-semantics agent (needs ANTHROPIC_API_KEY)</label></div>
   <div class="row"><label><input type="checkbox" name="allow_internal"> Allow internal/loopback target</label></div>
   <button type="submit">Start scan</button>

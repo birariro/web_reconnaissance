@@ -46,6 +46,21 @@ def test_proxy_policy_allows_passive_source_host() -> None:
     assert policy.check("web.archive.org").allowed is True
 
 
+def test_proxy_policy_blocks_state_changing_methods_by_default() -> None:
+    policy = ProxyPolicy(SCOPE, rate_per_second=100.0, max_requests=100)
+    assert policy.method_allowed("GET") is True
+    assert policy.method_allowed("OPTIONS") is True
+    assert policy.method_allowed("POST") is False
+    assert policy.method_allowed("DELETE") is False
+
+
+def test_proxy_policy_allows_state_changing_methods_when_destructive() -> None:
+    policy = ProxyPolicy(SCOPE, rate_per_second=100.0, max_requests=100, allow_destructive=True)
+    assert policy.method_allowed("POST") is True
+    assert policy.method_allowed("DELETE") is True
+    assert policy.method_allowed("PATCH") is True
+
+
 def test_proxy_policy_trips_killswitch_at_max_requests() -> None:
     policy = ProxyPolicy(SCOPE, rate_per_second=100.0, max_requests=2)
     assert policy.check("app.example.com").allowed is True

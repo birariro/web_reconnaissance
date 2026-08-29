@@ -23,6 +23,7 @@ from reconnaissance.models import DiscoveredEndpoint, DiscoveredParam, EndpointS
 logger = logging.getLogger(__name__)
 
 _OPERATION_KEYS = frozenset({"get", "put", "post", "delete", "patch", "options", "head", "trace"})
+_METHOD_MAP = {method.value.lower(): method for method in HttpMethod}
 _LOCATION_MAP = {"query": ParamLocation.QUERY, "path": ParamLocation.PATH, "header": ParamLocation.HEADER, "body": ParamLocation.BODY, "formData": ParamLocation.BODY}
 
 
@@ -182,15 +183,18 @@ def _walk_paths(doc: dict[str, Any], base_urls: tuple[str, ...]) -> tuple[tuple[
     for path, item in paths.items():
         if not isinstance(path, str) or not isinstance(item, dict):
             continue
-        params: list[DiscoveredParam] = []
+        url = _join(base, path)
         for method_key, operation in item.items():
             if method_key.lower() not in _OPERATION_KEYS or not isinstance(operation, dict):
                 continue
             operations += 1
-            params.extend(_params_from_operation(doc, operation))
-        url = _join(base, path)
-        endpoint = DiscoveredEndpoint(url=url, method=HttpMethod.GET, source=EndpointSource.SPEC)
-        endpoints.append(SpecEndpoint(endpoint=endpoint, params=tuple(_dedup_params(params))))
+            method = _METHOD_MAP.get(method_key.lower())
+            if method is None:  # recognised operation (e.g. trace) with no recordable verb
+                logger.debug("apispec: skipping unsupported method: %s %s", method_key, path)
+                continue
+            params = _dedup_params(list(_params_from_operation(doc, operation)))
+            endpoint = DiscoveredEndpoint(url=url, method=method, source=EndpointSource.SPEC)
+            endpoints.append(SpecEndpoint(endpoint=endpoint, params=tuple(params)))
     return tuple(endpoints), operations
 
 

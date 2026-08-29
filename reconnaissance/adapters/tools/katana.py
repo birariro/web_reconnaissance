@@ -103,8 +103,9 @@ def parse_crawl(text: str) -> CrawlOutcome:
 
     Each non-blank line is a JSON object shaped
     ``{"request":{"method","endpoint"},"response":{"status_code","content_type","title"}}``.
-    Non-GET/HEAD/OPTIONS methods are still recorded but forced to GET — the
-    pipeline only records surfaces, it never replays a state-changing request.
+    The request method is preserved when it maps to a known ``HttpMethod``;
+    an unrecognised verb is recorded as GET. Recording a state-changing verb is
+    inventory only — the pipeline replays it solely under ``send_destructive``.
     Blank or malformed lines are skipped with a warning.
     """
     endpoints: list[DiscoveredEndpoint] = []
@@ -132,7 +133,7 @@ def parse_crawl(text: str) -> CrawlOutcome:
         raw_method = str(request.get("method", "GET")).upper()
         method = _RECORDABLE_METHODS.get(raw_method)
         if method is None:
-            logger.debug("katana: recording non-GET method as GET: method=%s url=%s", raw_method, url)
+            logger.debug("katana: unrecognised method recorded as GET: method=%s url=%s", raw_method, url)
             method = HttpMethod.GET
 
         content_type = response.get("content_type")
