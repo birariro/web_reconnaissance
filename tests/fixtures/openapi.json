@@ -1,0 +1,14 @@
+{
+  "openapi": "3.0.1",
+  "info": {"title": "Example API", "version": "1.0"},
+  "servers": [{"url": "https://app.example.com/api/v1"}],
+  "paths": {
+    "/users": {
+      "get": {"parameters": [{"name": "page", "in": "query"}, {"name": "limit", "in": "query"}]},
+      "post": {"requestBody": {"content": {"application/json": {"schema": {"properties": {"name": {}, "email": {}}}}}}}
+    },
+    "/users/{id}": {
+      "get": {"parameters": [{"name": "id", "in": "path"}, {"name": "expand", "in": "query"}]}
+    }
+  }
+}

@@ -1,0 +1,28 @@
+# secrets / config — never commit
+.env
+*.local.toml
+reconnaissance.config.toml
+
+# scan output — may contain discovered secrets / session data
+*.sqlite
+*.sqlite3
+*.db
+scans/
+reports/
+
+# python
+__pycache__/
+*.pyc
+.venv/
+venv/
+*.egg-info/
+.mypy_cache/
+.ruff_cache/
+.pytest_cache/
+
+# eval target app (separate from reconnaissance; keep on disk, do not track)
+targets/
+CLAUDE.md
+agents/
+reports/
+scans/

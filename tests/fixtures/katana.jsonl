@@ -1,0 +1,5 @@
+{"timestamp":"2026-08-29T10:00:00Z","request":{"method":"GET","endpoint":"https://app.example.com/"},"response":{"status_code":200,"content_type":"text/html","title":"Home"}}
+{"timestamp":"2026-08-29T10:00:01Z","request":{"method":"GET","endpoint":"https://app.example.com/login"},"response":{"status_code":200,"content_type":"text/html","title":"Login"}}
+{"timestamp":"2026-08-29T10:00:02Z","request":{"method":"GET","endpoint":"https://app.example.com/static/app.js"},"response":{"status_code":200,"content_type":"application/javascript"}}
+{"timestamp":"2026-08-29T10:00:03Z","request":{"method":"GET","endpoint":"https://app.example.com/api/users?page=2"},"response":{"status_code":200,"content_type":"application/json"}}
+{"timestamp":"2026-08-29T10:00:04Z","request":{"method":"GET","endpoint":"https://cdn.other.com/lib.js"},"response":{"status_code":200,"content_type":"application/javascript"}}

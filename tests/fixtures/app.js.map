@@ -1,0 +1,11 @@
+{
+  "version": 3,
+  "file": "app.js",
+  "sources": ["webpack:///src/api/client.ts", "webpack:///src/routes/admin.ts"],
+  "sourcesContent": [
+    "export const api = { login: () => fetch('/api/v2/login'), users: () => fetch('/api/v2/users?page=1'), graph: () => fetch('https://api.example.com/graphql') };",
+    "export const adminRoutes = ['/admin/dashboard', '/admin/users/{id}/edit', '/admin/settings'];"
+  ],
+  "names": [],
+  "mappings": ";;"
+}

@@ -1,0 +1,6 @@
+https://app.example.com/
+https://app.example.com/old/legacy.php?id=5&token=abc
+https://app.example.com/search?q=test&lang=en
+https://app.example.com/api/v1/orders?status=open
+https://evil.other.com/phishing
+https://app.example.com/login

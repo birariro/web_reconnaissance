@@ -1,0 +1,48 @@
+# One service per recon tool. Each container idles (`sleep infinity`); the
+# pipeline runs the tool via `docker exec` into it, so tool output stays
+# reproducible and every tool is versioned in its own Dockerfile.
+# `host.docker.internal` maps to the host so in-container tools reach the
+# host egress proxy.
+name: reconnaissance-tools
+
+x-tool: &tool
+  command: ["sleep", "infinity"]
+  extra_hosts:
+    - "host.docker.internal:host-gateway"
+  restart: "no"
+
+services:
+  httpx:
+    <<: *tool
+    build:
+      context: ./httpx
+      args: {TARGETARCH: "${WEBRECON_ARCH:-arm64}"}
+    image: reconnaissance-httpx
+    container_name: reconnaissance-httpx
+  katana:
+    <<: *tool
+    build:
+      context: ./katana
+      args: {TARGETARCH: "${WEBRECON_ARCH:-arm64}"}
+    image: reconnaissance-katana
+    container_name: reconnaissance-katana
+  ffuf:
+    <<: *tool
+    build:
+      context: ./ffuf
+      args: {TARGETARCH: "${WEBRECON_ARCH:-arm64}"}
+    image: reconnaissance-ffuf
+    container_name: reconnaissance-ffuf
+  gau:
+    <<: *tool
+    build:
+      context: ./gau
+      args: {TARGETARCH: "${WEBRECON_ARCH:-arm64}"}
+    image: reconnaissance-gau
+    container_name: reconnaissance-gau
+  arjun:
+    <<: *tool
+    build:
+      context: ./arjun
+    image: reconnaissance-arjun
+    container_name: reconnaissance-arjun

@@ -1,0 +1,6 @@
+{
+  "https://app.example.com/search": {
+    "method": "GET",
+    "params": ["q", "lang", "debug", "redirect"]
+  }
+}
